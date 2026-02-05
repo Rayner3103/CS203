@@ -2,67 +2,53 @@ services:
   db:
     image: postgres:15-alpine
     restart: always
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Initialization script location
       - ./init-db:/docker-entrypoint-initdb.d
 
   backend:
-    build: ./backend
     image: raynersim/backend:v1.0
+    restart: always
     ports:
       - "${BACKEND_PORT}:8080"
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/${DB_NAME}
       - SPRING_DATASOURCE_USERNAME=${DB_USER}
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - JWT_EXP_TIME=${JWT_EXP_TIME}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       - FRONTEND_EC2_HOST=${FRONTEND_EC2_HOST}
     depends_on:
       - db
 
   frontend:
-    build:
-      context: ./frontend
-      args:
-        - NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
     image: raynersim/frontend:v1.0
+    restart: always
     ports:
       - "${FRONTEND_PORT}:3000"
     environment:
-      - NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
+     - NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
     depends_on:
       - backend
 
   scrapper:
-    build: ./scrapper
     image: raynersim/scrapper:v1.0
     restart: always
     environment:
-      # Mapping your .env variables to the script's required names
       - RDS_ENDPOINT=db
       - RDS_PORT=5432
       - RDS_USERNAME=${DB_USER}
       - RDS_PASSWORD=${DB_PASSWORD}
       - RDS_DBNAME=${DB_NAME}
-      # Optional Scraper Tweaks
-      - CONCURRENCY=50
-      - API_TIMEOUT=60
     depends_on:
       - db
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
 volumes:
   postgres_data:
