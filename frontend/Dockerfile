@@ -1,62 +1,21 @@
-FROM node:20-alpine AS base
-
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
+FROM node:18-alpine AS deps
 WORKDIR /app
+COPY package*.json ./
+RUN npm install
 
-# Install dependencies based on the preferred package manager
-COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* .npmrc* ./
-RUN npm ci;
-
-# Rebuild the source code only when needed
-FROM base AS builder
+FROM node:18-alpine AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_BACKEND_EC2_HOST
+ENV NEXT_PUBLIC_BACKEND_EC2_HOST=$NEXT_PUBLIC_BACKEND_EC2_HOST
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Next.js collects completely anonymous telemetry data about general usage.
-# Learn more here: https://nextjs.org/telemetry
-# Uncomment the following line in case you want to disable telemetry during the build.
-# ENV NEXT_TELEMETRY_DISABLED=1
-
-# Accept build-time argument and export it as an environment variable
-# so Next.js can read NEXT_PUBLIC_* variables at build time.
-ARG NEXT_PUBLIC_BACKEND_EC2_HOST
-ENV NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
-
 RUN npm run build
 
-# Production image, copy all the files and run next
-FROM base AS runner
+FROM node:18-alpine AS runner
 WORKDIR /app
-
-# Declare build arguments
-ARG NEXT_PUBLIC_BACKEND_EC2_HOST
-# Set as environment variables for Next.js build
-ENV NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
-
-ENV NODE_ENV=production
-# Uncomment the following line in case you want to disable telemetry during runtime.
-# ENV NEXT_TELEMETRY_DISABLED=1
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
+ENV NODE_ENV production
 COPY --from=builder /app/public ./public
-
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
-
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 3000
-
-ENV PORT=3000
-
-# server.js is created by next build from the standalone output
-# https://nextjs.org/docs/pages/api-reference/config/next-config-js/output
-ENV HOSTNAME="0.0.0.0"
 CMD ["node", "server.js"]
