@@ -3,29 +3,28 @@ services:
     image: postgres:15-alpine
     restart: always
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: r007_U53r_PA55w0rd
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Initialization script location
       - ./init-db:/docker-entrypoint-initdb.d
 
   backend:
     build: ./backend
     image: raynersim/backend:v1.0
     ports:
-      - "${BACKEND_PORT}:8080"
+      - "8080:8080"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/${DB_NAME}
-      - SPRING_DATASOURCE_USERNAME=${DB_USER}
-      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - JWT_EXP_TIME=${JWT_EXP_TIME}
-      - FRONTEND_EC2_HOST=${FRONTEND_EC2_HOST}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/postgres
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=r007_U53r_PA55w0rd
+      - GEMINI_API_KEY=AIzaSyCDond6yeve5adwKkZtPEBEZFOk0sboJjQ
+      - FRONTEND_EC2_HOST=100.113.192.51
+      - JWT_SECRET_KEY=b9bfa3684e916e348213eaba6a240cc93e7b1d2175a35c19ee7afe50b3d4c7ad
+      - JWT_EXP_TIME=3600000
     depends_on:
       - db
 
@@ -33,36 +32,16 @@ services:
     build:
       context: ./frontend
       args:
-        - NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
+        - NEXT_PUBLIC_API_URL=100.113.192.51
+        - NEXT_PUBLIC_BACKEND_EC2_HOST=100.113.192.51
     image: raynersim/frontend:v1.0
     ports:
-      - "${FRONTEND_PORT}:3000"
+      - "3000:3000"
     environment:
-      - NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
+      - NEXT_PUBLIC_API_URL=100.113.192.51
+      - NEXT_PUBLIC_BACKEND_EC2_HOST=100.113.192.51
     depends_on:
       - backend
-
-  scrapper:
-    build: ./scrapper
-    image: raynersim/scrapper:v1.0
-    restart: always
-    environment:
-      # Mapping your .env variables to the script's required names
-      - RDS_ENDPOINT=db
-      - RDS_PORT=5432
-      - RDS_USERNAME=${DB_USER}
-      - RDS_PASSWORD=${DB_PASSWORD}
-      - RDS_DBNAME=${DB_NAME}
-      # Optional Scraper Tweaks
-      - CONCURRENCY=50
-      - API_TIMEOUT=60
-    depends_on:
-      - db
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
 volumes:
   postgres_data:

@@ -24,10 +24,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # DB config env names
-DB_HOST = os.getenv("RDS_ENDPOINT", "mypostgreslink")
+DB_HOST = os.getenv("RDS_ENDPOINT", "localhost")
 DB_PORT = os.getenv("RDS_PORT", "5432")
 DB_USER = os.getenv("RDS_USERNAME", "postgres")
-DB_PASSWORD = os.getenv("RDS_PASSWORD", "postgrespw")
+DB_PASSWORD = os.getenv("RDS_PASSWORD", "r007_U53r_PA55w0rd")
 DB_NAME = os.getenv("RDS_DBNAME", "postgres")
 
 # Scraper config
@@ -48,11 +48,34 @@ PRODUCT_LIST = [
     "854231"
 ]
 
-WITS_CODLIST_URL = "https://wits.worldbank.org/API/V1/SDMX/V21/rest/codelist/all/"
+WITS_COUNTRY_URL = "https://wits.worldbank.org/API/V1/wits/datasource/trn/country/all"
 WITS_TARIFF_URL_TEMPLATE = (
-    "https://wits.worldbank.org/API/V1/SDMX/V21/rest/data/DF_WITS_Tariff_TRAINS/"
-    "A.{destination}.{origin}.{product}.reported/?startperiod=1988&detail=dataOnly"
+    "https://wits.worldbank.org/API/V1/SDMX/V21/datasource/TRN/"
+    "reporter/{destination}/partner/{origin}/product/{product}/year/all/datatype/reported"
 )
+
+
+def extract_pair_for_log(url: str) -> Tuple[str | None, str | None]:
+    """Best-effort extraction of destination/origin from the tariff API URL."""
+    # New documented endpoint style:
+    # .../datasource/TRN/reporter/{destination}/partner/{origin}/...
+    marker = "/datasource/TRN/reporter/"
+    if marker in url:
+        tail = url.split(marker, 1)[1]
+        parts = tail.split("/")
+        if len(parts) >= 4 and parts[1] == "partner":
+            return parts[0], parts[2]
+
+    # Legacy SDMX rest/data style:
+    # .../DF_WITS_Tariff_TRAINS/A.{destination}.{origin}.{product}.{datatype}/...
+    marker = "DF_WITS_Tariff_TRAINS/A."
+    if marker in url:
+        tail = url.split(marker, 1)[1]
+        parts = tail.split(".")
+        if len(parts) >= 3:
+            return parts[0], parts[1]
+
+    return None, None
 
 # SQL statements (lowercase table names, snake_case columns)
 CREATE_TEMP_TABLE_SQL = """
@@ -127,50 +150,90 @@ VALUES ($1, $2)
 ON CONFLICT (tariff_id, hts_code) DO NOTHING;
 """
 
+COUNTRY_UPSERT_SQL = """
+INSERT INTO country(code, name)
+VALUES ($1, $2)
+ON CONFLICT (code) DO NOTHING
+"""
+
 
 # Helper: XML parsing functions (adapted from your original impl)
-def extract_country_codes_and_names(xml_content: bytes) -> Dict[str, str]:
+def extract_country_codes_and_names(xml_content: bytes) -> Tuple[Dict[str, str], List[str]]:
+    """
+    Parse countries from the documented URL-based metadata endpoint:
+    /API/V1/wits/datasource/trn/country/all
+
+    Returns:
+        all_countries: dict of code -> name for ALL numeric individual countries
+                       (used to seed the country table before tariff inserts)
+        reporter_codes: list of codes where isreporter="1"
+                        (used to generate reporter-destination scraping pairs)
+
+    Fallback to SDMX codelist parsing if that format is returned.
+    """
     root = ET.fromstring(xml_content)
+
+    # Primary format from the current WITS user guide (wits:datasource XML).
+    wits_countries = root.findall(".//{http://wits.worldbank.org}country")
+    if wits_countries:
+        all_countries: Dict[str, str] = {}
+        reporter_codes: List[str] = []
+        for country in wits_countries:
+            code_id = country.attrib.get("countrycode", "")
+            is_reporter = country.attrib.get("isreporter", "0")
+            is_group = country.attrib.get("isgroup", "No")
+            name_element = country.find("{http://wits.worldbank.org}name")
+
+            # Skip group/aggregate codes; keep only individual numeric country codes.
+            if not code_id or is_group == "Yes" or not code_id.isdigit():
+                continue
+
+            country_name = (name_element.text or "Unknown") if name_element is not None else "Unknown"
+            all_countries[code_id] = country_name
+            if is_reporter == "1":
+                reporter_codes.append(code_id)
+        return all_countries, reporter_codes
+
+    # Fallback format (SDMX codelist).
     namespace = {
-        'ns': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message',
         'structure': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/structure',
         'common': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common'
     }
     codelist = root.find(".//structure:Codelist[@id='CL_COUNTRY_WITS']", namespace)
     if codelist is None:
-        print("Codelist with id 'CL_COUNTRY_WITS' not found.")
-        return {}
-    country_dict = {}
+        print("Country metadata not found in response.")
+        return {}, []
+
+    country_dict: Dict[str, str] = {}
     for code in codelist.findall("structure:Code", namespace):
         code_id = code.attrib.get('id')
-        if not code_id:
-            continue
-        # your original filter: skip codes where first char is not digit
-        # but that seems odd for country codes; keep original behaviour:
-        if not code_id[0].isdigit():
+        if not code_id or not code_id[0].isdigit():
             continue
         name_element = code.find("common:Name", namespace)
         country_name = name_element.text if name_element is not None else "Unknown"
         country_dict[code_id] = country_name
-    return country_dict
+    return country_dict, list(country_dict.keys())
 
-def parse_tariff_from_content(xml_content: bytes, origin_country: str, destination_country: str) -> Dict[str, List[dict]]:
-    root = ET.fromstring(xml_content)
+
+def _parse_tariff_generic_data(root: ET.Element) -> Dict[str, List[dict]]:
     namespace = {
         'generic': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/generic',
-        'message': 'http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message'
     }
     records_by_product: Dict[str, List[dict]] = {}
     series_list = root.findall(".//generic:Series", namespace)
-    if not series_list:
-        return records_by_product
     for series in series_list:
         key = series.find("generic:SeriesKey/generic:Value[@id='PRODUCTCODE']", namespace)
-        if key is None:
+        reporter = series.find("generic:SeriesKey/generic:Value[@id='REPORTER']", namespace)
+        partner = series.find("generic:SeriesKey/generic:Value[@id='PARTNER']", namespace)
+        if key is None or reporter is None or partner is None:
             continue
+
         product_code = key.attrib.get("value")
-        if not product_code:
+        destination_country = reporter.attrib.get("value")
+        origin_country = partner.attrib.get("value")
+        if not product_code or not destination_country or not origin_country:
             continue
+
         records_by_product.setdefault(product_code, [])
         for obs in series.findall("generic:Obs", namespace):
             time_dimension = obs.find("generic:ObsDimension[@id='TIME_PERIOD']", namespace)
@@ -187,7 +250,7 @@ def parse_tariff_from_content(xml_content: bytes, origin_country: str, destinati
                 ad_rate = float(ad_valorem_rate) * 0.01
             except Exception:
                 ad_rate = 0.0
-            rec = {
+            records_by_product[product_code].append({
                 "id": str(uuid.uuid4()),
                 "origin_country": origin_country,
                 "destination_country": destination_country,
@@ -199,13 +262,64 @@ def parse_tariff_from_content(xml_content: bytes, origin_country: str, destinati
                 "max_quantity": 0,
                 "user_defined": False,
                 "enabled": True
-            }
-            records_by_product[product_code].append(rec)
+            })
     return records_by_product
+
+
+def _parse_tariff_structure_specific_data(root: ET.Element) -> Dict[str, List[dict]]:
+    records_by_product: Dict[str, List[dict]] = {}
+
+    # Structure-specific responses use unprefixed Series/Obs with dimensions as attributes.
+    for series in root.findall(".//{*}Series") + root.findall(".//Series"):
+        product_code = series.attrib.get("PRODUCTCODE")
+        destination_country = series.attrib.get("REPORTER")
+        origin_country = series.attrib.get("PARTNER")
+        if not product_code or not destination_country or not origin_country:
+            continue
+
+        records_by_product.setdefault(product_code, [])
+        for obs in series.findall("{*}Obs") + series.findall("Obs"):
+            time_period = obs.attrib.get("TIME_PERIOD")
+            ad_valorem_rate = obs.attrib.get("OBS_VALUE")
+            if not time_period:
+                continue
+
+            try:
+                eff_date = date(int(time_period), 1, 1)
+            except Exception:
+                continue
+
+            try:
+                ad_rate = float(ad_valorem_rate) * 0.01
+            except Exception:
+                ad_rate = 0.0
+
+            records_by_product[product_code].append({
+                "id": str(uuid.uuid4()),
+                "origin_country": origin_country,
+                "destination_country": destination_country,
+                "effective_date": eff_date,
+                "expiry_date": None,
+                "ad_valorem_rate": ad_rate,
+                "specific_rate": 0.0,
+                "min_quantity": 0,
+                "max_quantity": 0,
+                "user_defined": False,
+                "enabled": True
+            })
+    return records_by_product
+
+def parse_tariff_from_content(xml_content: bytes) -> Dict[str, List[dict]]:
+    root = ET.fromstring(xml_content)
+    # New datasource/TRN endpoint returns structure-specific XML; rest/data returns generic XML.
+    records_by_product = _parse_tariff_structure_specific_data(root)
+    if records_by_product:
+        return records_by_product
+    return _parse_tariff_generic_data(root)
 
 def format_rec(records):
     for r in records:
-        print(f"{r["effective_date"]}, {r["expiry_date"]}, {r["ad_valorem_rate"]}, {r["specific_rate"]}")
+        print(f"{r['effective_date']}, {r['expiry_date']}, {r['ad_valorem_rate']}, {r['specific_rate']}")
 
 def clean_tariff(records: List[dict]) -> List[dict]:
     if not records:
@@ -230,7 +344,13 @@ def clean_tariff(records: List[dict]) -> List[dict]:
 # Async fetch helpers
 async def fetch_bytes_with_retries(session: aiohttp.ClientSession, url: str, semaphore: asyncio.Semaphore) -> bytes | None:
     backoff = RETRY_BASE
-    txt = url.split(".")
+    destination, origin = extract_pair_for_log(url)
+    target = (
+        f"dest: {destination}, ori: {origin}"
+        if destination is not None and origin is not None
+        else f"url: {url}"
+    )
+
     for attempt in range(1, MAX_RETRIES + 1):
         async with semaphore:
             try:
@@ -241,9 +361,10 @@ async def fetch_bytes_with_retries(session: aiohttp.ClientSession, url: str, sem
                         # transient: retry
                         pass
                     elif resp.status == 404:
-                        print(f"Not found for dest: {txt[3]}, ori: {txt[4]}")
+                        print(f"Not found for {target}")
                         return None
                     else:
+                        print(f"HTTP {resp.status} for {target}")
                         return None
                     
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -253,22 +374,33 @@ async def fetch_bytes_with_retries(session: aiohttp.ClientSession, url: str, sem
         jitter = random.random() * 0.1 * backoff
         await asyncio.sleep(backoff + jitter)
         backoff *= 2
-    print(f"Max retries exceeded for dest: {txt[3]}, ori: {txt[4]}")
+    print(f"Max retries exceeded for {target}")
     return None
 
-async def fetch_country_codes_async(session: aiohttp.ClientSession, semaphore: asyncio.Semaphore) -> Dict[str, str]:
-    data = await fetch_bytes_with_retries(session, WITS_CODLIST_URL, semaphore)
+async def fetch_country_codes_async(session: aiohttp.ClientSession, semaphore: asyncio.Semaphore) -> Tuple[Dict[str, str], List[str]]:
+    data = await fetch_bytes_with_retries(session, WITS_COUNTRY_URL, semaphore)
     if not data:
-        return {}
+        return {}, []
     return extract_country_codes_and_names(data)
 
+
+async def upsert_countries(pool: asyncpg.pool.Pool, country_dict: Dict[str, str]):
+    """Insert all countries into the country table before tariff writes to satisfy FK constraints."""
+    if not country_dict:
+        return
+    rows = list(country_dict.items())  # [(code, name), ...]
+    async with pool.acquire() as conn:
+        await conn.executemany(COUNTRY_UPSERT_SQL, rows)
+    print(f"  Upserted {len(rows)} countries into DB.")
+
 async def fetch_tariff_for_pair(session: aiohttp.ClientSession, semaphore: asyncio.Semaphore, origin: str, destination: str, products: List[str]) -> Dict[str, List[dict]] | None:
-    product_join = "+".join(products)
+    # Datasource path parameters accept multi-values delimited by ';'.
+    product_join = ";".join(products)
     url = WITS_TARIFF_URL_TEMPLATE.format(origin=origin, destination=destination, product=product_join)
     data = await fetch_bytes_with_retries(session, url, semaphore)
     if not data:
         return None
-    return parse_tariff_from_content(data, origin, destination)
+    return parse_tariff_from_content(data)
 
 # DB flush helpers - FIXED VERSION
 async def flush_batches(pool: asyncpg.pool.Pool, tariff_rows: List[Tuple], product_links: Dict[str, str]):
@@ -333,14 +465,16 @@ async def run_scrape():
     timeout = aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=API_TIMEOUT)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         print("Fetching country codes...")
-        country_dict = await fetch_country_codes_async(session, semaphore)
-        if not country_dict:
+        all_countries, reporter_codes = await fetch_country_codes_async(session, semaphore)
+        if not all_countries:
             print("No countries found — exiting.")
             await pool.close()
             return
-        countries = list(country_dict.keys())
+        print(f"Seeding {len(all_countries)} countries into DB...")
+        await upsert_countries(pool, all_countries)
+        countries = reporter_codes
         total_pairs = len(countries) * (len(countries) - 1)
-        print(f"Found {len(countries)} countries => {total_pairs} origin-destination pairs (excluding same-country).")
+        print(f"Found {len(reporter_codes)} reporter countries => {total_pairs} origin-destination pairs (excluding same-country).")
         global TOTAL_ORIGINS_DEST
         TOTAL_ORIGINS_DEST = total_pairs
 

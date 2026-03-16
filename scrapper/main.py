@@ -1,6 +1,7 @@
 from typing import Union
 from fastapi import FastAPI, HTTPException
 import asyncio 
+import traceback
 
 import scrapper
 
@@ -39,5 +40,8 @@ async def scrape():
 async def run_scraping():
     try:
         await asyncio.to_thread(scrapper.main)  # Run the blocking function in a thread
+    except Exception as e:
+        print(f"Scraping task failed: {e}")
+        traceback.print_exc()
     finally:
         app.is_scrapping = False
