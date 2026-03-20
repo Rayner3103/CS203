@@ -2,10 +2,12 @@ services:
   db:
     image: postgres:15-alpine
     restart: always
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: r007_U53r_PA55w0rd
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -15,16 +17,18 @@ services:
   backend:
     build: ./backend
     image: raynersim/backend:v1.0
+    env_file:
+      - .env
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT}:8080"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/postgres
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=r007_U53r_PA55w0rd
-      - GEMINI_API_KEY=AIzaSyCDond6yeve5adwKkZtPEBEZFOk0sboJjQ
-      - FRONTEND_EC2_HOST=100.113.192.51
-      - JWT_SECRET_KEY=b9bfa3684e916e348213eaba6a240cc93e7b1d2175a35c19ee7afe50b3d4c7ad
-      - JWT_EXP_TIME=3600000
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/${DB_NAME}
+      - SPRING_DATASOURCE_USERNAME=${DB_USER}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - FRONTEND_EC2_HOST=${FRONTEND_EC2_HOST}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_EXP_TIME=${JWT_EXP_TIME}
     depends_on:
       - db
 
@@ -32,14 +36,16 @@ services:
     build:
       context: ./frontend
       args:
-        - NEXT_PUBLIC_API_URL=100.113.192.51
-        - NEXT_PUBLIC_BACKEND_EC2_HOST=100.113.192.51
+        - NEXT_PUBLIC_API_URL=${FRONTEND_EC2_HOST}
+        - NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
     image: raynersim/frontend:v1.0
+    env_file:
+      - .env
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=100.113.192.51
-      - NEXT_PUBLIC_BACKEND_EC2_HOST=100.113.192.51
+      - NEXT_PUBLIC_API_URL=${FRONTEND_EC2_HOST}
+      - NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
     depends_on:
       - backend
 
