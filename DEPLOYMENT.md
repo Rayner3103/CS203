@@ -18,7 +18,7 @@ Because the frontend and backend are on **different sites**, auth relies on a cr
 
 1. Create a Neon project and a database. Copy the connection string. You'll need it in two forms:
    - **psql/seed form:** `postgresql://<user>:<pass>@<host>/<db>?sslmode=require`
-   - **JDBC form (for Render):** `jdbc:postgresql://<host>/<db>?sslmode=verify-full` (see [Database connection](#database-connection-ssl-channel-binding-and-pooling) for why `verify-full` and not the copied `require`/`channel_binding`)
+   - **JDBC form (for Render):** `jdbc:postgresql://<host>/<db>?sslmode=verify-full` — **host only, no `user:pass@`** (credentials go in separate env vars; see the warning in §2). See [Database connection](#database-connection-ssl-channel-binding-and-pooling) for why `verify-full` and not the copied `require`/`channel_binding`.
 2. **Seed the demo data — once, before the backend ever starts.** The dump creates tables with plain `CREATE TABLE` (no `IF NOT EXISTS`), so it must run against an empty DB before Hibernate auto-creates anything.
 
    Use [`neon-seed.sql`](neon-seed.sql) (a Neon-sanitized copy of `demoData.sql` — the `OWNER TO postgres` and `\restrict` lines that fail on Neon have been stripped):
@@ -57,6 +57,14 @@ Create a **Web Service** → "Build and deploy from a Git repository".
 | `FRONTEND_ORIGIN` | `https://<project>.vercel.app,https://*.vercel.app` |
 | `COOKIE_SECURE` | `true` |
 | `COOKIE_SAMESITE` | `None` |
+
+> ⚠️ **Do NOT paste Neon's full connection string into `SPRING_DATASOURCE_URL`.** Neon copies a libpq string that embeds credentials (`postgresql://user:pass@host/db`). The PostgreSQL **JDBC driver does not accept `user:pass@` in the URL** — it reads the part after the first `:` as the port and fails with `invalid port number` / `Driver ... claims to not accept jdbcUrl`. The URL must contain **only** host + `/db` + `?sslmode=...`; put the user and password in the separate `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` vars. Example:
+>
+> ```
+> SPRING_DATASOURCE_URL=jdbc:postgresql://ep-xxxx.region.aws.neon.tech/neondb?sslmode=verify-full
+> SPRING_DATASOURCE_USERNAME=neondb_owner
+> SPRING_DATASOURCE_PASSWORD=npg_xxxxxxxx
+> ```
 
 `FRONTEND_ORIGIN` is comma-separated and supports patterns — the `https://*.vercel.app` entry lets Vercel **preview** deployments talk to the backend too. Drop it if you want production-only.
 
