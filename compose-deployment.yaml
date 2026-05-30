@@ -24,7 +24,9 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - JWT_EXP_TIME=${JWT_EXP_TIME}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - FRONTEND_EC2_HOST=${FRONTEND_EC2_HOST}
+      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - COOKIE_SAMESITE=${COOKIE_SAMESITE:-Lax}
     depends_on:
       - db
 
@@ -34,7 +36,8 @@ services:
     ports:
       - "${FRONTEND_PORT}:3000"
     environment:
-     - NEXT_PUBLIC_BACKEND_EC2_HOST=${NEXT_PUBLIC_BACKEND_EC2_HOST}
+     # Note: NEXT_PUBLIC_* is baked at image build time; rebuild the image to change it.
+     - NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
     depends_on:
       - backend
 
@@ -47,6 +50,7 @@ services:
       - RDS_USERNAME=${DB_USER}
       - RDS_PASSWORD=${DB_PASSWORD}
       - RDS_DBNAME=${DB_NAME}
+      - DB_SSLMODE=disable
     depends_on:
       - db
 

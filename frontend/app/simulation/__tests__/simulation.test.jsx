@@ -20,7 +20,7 @@ describe('SimulationPage', () => {
   const ORIGINAL_ENV = process.env;
 
   beforeEach(() => {
-    process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_BACKEND_EC2_HOST: 'localhost' };
+    process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_API_BASE_URL: 'http://localhost:8080' };
     global.fetch = jest.fn();
   });
 

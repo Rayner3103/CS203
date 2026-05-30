@@ -5,8 +5,9 @@ RUN npm install
 
 FROM node:18-alpine AS builder
 WORKDIR /app
-ARG NEXT_PUBLIC_BACKEND_EC2_HOST
-ENV NEXT_PUBLIC_BACKEND_EC2_HOST=$NEXT_PUBLIC_BACKEND_EC2_HOST
+# Full base URL of the backend API (e.g. https://tariff-backend.onrender.com). Baked at build time.
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

@@ -55,7 +55,7 @@ export default function SimulationPage() {
       formData.append("file", pdfFile);
       formData.append("country", selectionMode === 'continent' ? continent : country);
 
-      const res = await fetch(`http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/predict`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/predict`, {
         method: "POST",
         body: formData,
       });

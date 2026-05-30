@@ -9,6 +9,7 @@ DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
 """
 
 import os
+import ssl as ssl_lib
 import asyncio
 import aiohttp
 import asyncpg
@@ -29,6 +30,9 @@ DB_PORT = os.getenv("RDS_PORT", "5432")
 DB_USER = os.getenv("RDS_USERNAME", "postgres")
 DB_PASSWORD = os.getenv("RDS_PASSWORD", "r007_U53r_PA55w0rd")
 DB_NAME = os.getenv("RDS_DBNAME", "postgres")
+# SSL mode for the DB connection. Neon requires TLS -> set DB_SSLMODE=require.
+# Local Postgres: leave as "disable" (the default).
+DB_SSLMODE = os.getenv("DB_SSLMODE", "disable")
 
 # Scraper config
 CONCURRENCY = int(os.getenv("CONCURRENCY", "50"))   # you chose 50
@@ -459,7 +463,10 @@ async def run_scrape():
     start = time.time()
     semaphore = asyncio.Semaphore(CONCURRENCY)
     db_dsn = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    pool = await asyncpg.create_pool(dsn=db_dsn, min_size=1, max_size=max(2, CONCURRENCY // 4 + 1))
+    # asyncpg takes an SSLContext (not the libpq "sslmode" string). Build one for managed
+    # providers like Neon that require TLS; stay plaintext for local Postgres.
+    ssl_ctx = ssl_lib.create_default_context() if DB_SSLMODE.lower() in ("require", "verify-ca", "verify-full") else None
+    pool = await asyncpg.create_pool(dsn=db_dsn, ssl=ssl_ctx, min_size=1, max_size=max(2, CONCURRENCY // 4 + 1))
     print(f"Connected to DB pool. concurrency={CONCURRENCY}, pairs_per_flush={PAIRS_PER_FLUSH}")
 
     timeout = aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=API_TIMEOUT)

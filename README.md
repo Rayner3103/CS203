@@ -65,14 +65,14 @@ It is tailored for the **Technology Sector**, focusing on trade-related data man
 
 ## 🏗️ Technical Architecture  
 
-- **Frontend**: ReactJS  
+- **Frontend**: ReactJS / Next.js  
 - **Backend**: Spring Boot (Java) with Swagger UI for API documentation  
 - **Database**: PostgreSQL  
-- **Deployment**:  
-  - **Backend **: AWS EC2
-  - Database **: AWS RDS
-  - **Frontend **: AWS EC2
-  - **Scrapper **: AWS EC2
+- **Deployment** (see [DEPLOYMENT.md](DEPLOYMENT.md)):  
+  - **Frontend**: Vercel
+  - **Backend**: Render.com (Docker)
+  - **Database**: Neon (managed Postgres, seeded once with `neon-seed.sql`)
+  - **Scrapper**: run locally/manually against Neon (`DB_SSLMODE=require`)
 
 ---
 

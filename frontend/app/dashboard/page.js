@@ -22,7 +22,7 @@ export default function DashboardPage() {
     const fetchMe = async () => {
       try {
         const meRes = await apiFetch(
-          `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/users/me`
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/users/me`
         );
         if (!meRes.ok) {
           console.log("meRes not ok");

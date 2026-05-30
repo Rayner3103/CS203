@@ -20,7 +20,7 @@ export default function HeatmapPage() {
     useEffect(() => {
         const fetchProducts = async () => {
             try {
-                const res = await fetch(`http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/products`);
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/products`);
                 if (!res.ok) return;
                 const data = await res.json();
                 if (Array.isArray(data)) setProductsList(data);
@@ -101,7 +101,7 @@ export default function HeatmapPage() {
 			const fetchFromServer = async () => {
 				try {
 					setError(null);
-					const res = await fetch(`http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/tariffs`);
+					const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/tariffs`);
 					if (!res.ok) throw new Error(`Status ${res.status}`);
 					const data = await res.json();
 					const list = data || [];
@@ -126,7 +126,7 @@ export default function HeatmapPage() {
 			setLoading(true);
 			setError(null);
 			try {
-				const res = await fetch(`http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/tariffs`);
+				const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/tariffs`);
 				if (!res.ok) throw new Error(`Status ${res.status}`);
 				const data = await res.json();
 				const list = data || [];

@@ -2,6 +2,7 @@ package com.tariff.backend.controller;
 
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,6 +32,14 @@ public class UserController {
 
   private final JwtService jwtService;
   private final UserService userService;
+
+  // Cross-site cookies (Vercel frontend -> Render backend) require Secure + SameSite=None.
+  // Local http dev uses secure=false / SameSite=Lax. Driven by env so one build serves both.
+  @Value("${app.cookie.secure:false}")
+  private boolean cookieSecure;
+
+  @Value("${app.cookie.same-site:Lax}")
+  private String cookieSameSite;
 
   public UserController(UserService userService, JwtService jwtService) {
     this.userService = userService;
@@ -67,14 +76,14 @@ public class UserController {
     User authenticatedUser = userService.loginUser(loginDto);
     String jwtToken = jwtService.generateToken(authenticatedUser);
 
-    // ✅ Set HttpOnly cookie
+    // ✅ Set auth cookie
     Cookie cookie = new Cookie("auth_token", jwtToken);
-    cookie.setHttpOnly(false);  // Prevents JavaScript access
-    cookie.setSecure(false);    // Only sent over HTTPS (set false for local dev)
-    cookie.setPath("/");       // Available for all paths
+    cookie.setHttpOnly(false);       // Frontend reads it (kept as-is)
+    cookie.setSecure(cookieSecure);  // Must be true when SameSite=None (cross-site prod)
+    cookie.setPath("/");             // Available for all paths
     cookie.setMaxAge(3 * 24 * 60 * 60); // 3 days in seconds
-    // cookie.setAttribute("SameSite", "Strict"); // CSRF protection
-    
+    cookie.setAttribute("SameSite", cookieSameSite); // None for cross-site, Lax for local dev
+
     response.addCookie(cookie);
     System.out.println("Set cookie in response"); 
     System.out.println(cookie);
@@ -112,13 +121,15 @@ public class UserController {
 
     @PostMapping("/logout")
     public ResponseEntity<String> logout(HttpServletResponse response) {
-      // Delete the cookie by setting maxAge to 0
+      // Delete the cookie by setting maxAge to 0.
+      // Attributes must match the login cookie so the browser overwrites/clears it cross-site.
       Cookie cookie = new Cookie("auth_token", null);
-      cookie.setHttpOnly(true);
-      cookie.setSecure(false);
+      cookie.setHttpOnly(false);
+      cookie.setSecure(cookieSecure);
       cookie.setPath("/");
       cookie.setMaxAge(0);  // Expire immediately
-      
+      cookie.setAttribute("SameSite", cookieSameSite);
+
       response.addCookie(cookie);
       
       return ResponseEntity.ok("Logged out successfully");

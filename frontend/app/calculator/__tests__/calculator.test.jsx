@@ -33,7 +33,7 @@ const findSummaryItem = (summary, text) => {
 describe('CalculatorPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_BACKEND_EC2_HOST: 'mock.api' };
+    process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_API_BASE_URL: 'http://mock.api' };
     localStorage.setItem('userEmail', 'test@example.com');
     
     // Default mock for all tests

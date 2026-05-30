@@ -41,14 +41,14 @@ export default function CalculatorPage() {
   // Fetch countries and products on page load
   useEffect(() => {
     fetch(
-      `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/countries`
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/countries`
     )
       .then((res) => res.json())
       .then((data) => setCountries(data))
       .catch(() => setCountries([]));
 
     fetch(
-      `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/products`
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/products`
     )
       .then((res) => res.json())
       .then((data) => {
@@ -82,7 +82,7 @@ export default function CalculatorPage() {
       const formattedDate = calculationDate.toISOString().split("T")[0];
       // TODO: change this to process.env
       fetch(
-        `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/tariffs/particular-tariff-rate`,
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/tariffs/particular-tariff-rate`,
         {
           method: "POST",
           headers: {
@@ -139,7 +139,7 @@ export default function CalculatorPage() {
       const originParam = encodeURIComponent(originCountry);
       const productParam = encodeURIComponent(product);
       fetch(
-        `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/tariffs/valid-destinations?originCountry=${originParam}&productName=${productParam}`
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/tariffs/valid-destinations?originCountry=${originParam}&productName=${productParam}`
       )
         .then(async (res) => {
           if (!res.ok) {

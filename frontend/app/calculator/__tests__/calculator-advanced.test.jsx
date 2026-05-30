@@ -31,7 +31,7 @@ const originalFetch = global.fetch;
 describe('CalculatorPage - Advanced Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_BACKEND_EC2_HOST: 'http://localhost:8080' };
+    process.env = { ...ORIGINAL_ENV, NEXT_PUBLIC_API_BASE_URL: 'http://localhost:8080' };
     localStorage.setItem('userEmail', 'test@example.com');
 
     // Default mocks

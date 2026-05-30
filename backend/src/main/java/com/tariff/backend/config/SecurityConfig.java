@@ -24,8 +24,10 @@ import com.tariff.backend.component.JwtAuthFilter;
 @EnableWebSecurity
 public class SecurityConfig {
 
-  @Value("${FRONTEND_EC2_HOST}")
-  private String frontendHost;
+  // Comma-separated list of allowed frontend origins (full origins, e.g. https://app.vercel.app).
+  // Patterns are supported (e.g. https://*.vercel.app) for preview deployments.
+  @Value("${app.frontend.origins:http://localhost:3000}")
+  private String frontendOrigins;
 
   private final AuthenticationProvider authenticationProvider;
   private final JwtAuthFilter jwtAuthenticationFilter;
@@ -102,21 +104,17 @@ public class SecurityConfig {
   @Bean
   CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration configuration = new CorsConfiguration();
-    // Allow the frontend EC2 host (if provided via env) and localhost for local dev.
-    // Use a dynamic list so we don't pass null into List.of
-    java.util.ArrayList<String> allowedOrigins = new java.util.ArrayList<>();
-    if (frontendHost != null && !frontendHost.isBlank()) {
-      // Expect frontendHost to include scheme and port
-      allowedOrigins.add("http://" + frontendHost + ":3000");
-    }
-    // Always allow localhost for local development
-    // allowedOrigins.add("http://" + frontendHost +":3000");
-    configuration.setAllowedOrigins(allowedOrigins);
+    // Each origin must be a full origin (scheme + host [+ port]), e.g. https://app.vercel.app.
+    // Patterns (https://*.vercel.app) are supported and required when allowCredentials is true
+    // (a literal "*" is not allowed with credentials).
+    List<String> originPatterns = java.util.Arrays.stream(frontendOrigins.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isBlank())
+        .toList();
+    configuration.setAllowedOriginPatterns(originPatterns);
     configuration.setAllowedMethods(
       List.of("GET", "POST", "PUT", "DELETE", "OPTIONS")
-      // List.of("GET", "POST", "PUT","DELETE")
     );
-    // configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
     configuration.setAllowedHeaders(List.of("*"));
     configuration.setAllowCredentials(true);
 

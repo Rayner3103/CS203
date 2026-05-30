@@ -19,6 +19,8 @@ RDS_USERNAME=os.getenv("RDS_USERNAME")
 RDS_REGION=os.getenv("RDS_REGION")
 RDS_DBNAME=os.getenv("RDS_DBNAME")
 RDS_PASSWORD=os.getenv("RDS_PASSWORD")
+# Neon and other managed Postgres require TLS -> set DB_SSLMODE=require. Local: "disable".
+DB_SSLMODE=os.getenv("DB_SSLMODE", "disable")
 
 # LOCAL
 LOCAL_ENDPOINT=os.getenv("LOCAL_ENDPOINT")
@@ -33,7 +35,7 @@ def connect_postgres(local: bool=True):
     if local:
         return psycopg2.connect(host=LOCAL_ENDPOINT, port=LOCAL_PORT, database=LOCAL_DBNAME, user=LOCAL_USERNAME, password=LOCAL_PASSWORD)
     else:
-        return psycopg2.connect(host=RDS_ENDPOINT, port=RDS_PORT, database=RDS_DBNAME, user=RDS_USERNAME, password=RDS_PASSWORD)
+        return psycopg2.connect(host=RDS_ENDPOINT, port=RDS_PORT, database=RDS_DBNAME, user=RDS_USERNAME, password=RDS_PASSWORD, sslmode=DB_SSLMODE)
 
 def write_countries(new_data: dict[str, str], local=False):
     conn = connect_postgres(local)

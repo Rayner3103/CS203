@@ -128,7 +128,7 @@ export default function HeatmapPage() {
     const fetchProducts = async () => {
       try {
         const res = await apiFetch(
-          `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/products`
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/products`
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -145,7 +145,7 @@ export default function HeatmapPage() {
     const fetchCountries = async () => {
       try {
         const res = await apiFetch(
-          `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/countries`
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/countries`
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -179,7 +179,7 @@ export default function HeatmapPage() {
       try {
         setError(null);
         const res = await apiFetch(
-          `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/tariffs`
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/tariffs`
         );
         if (!res.ok) throw new Error(`Status ${res.status}`);
         const data = await res.json();
@@ -208,7 +208,7 @@ export default function HeatmapPage() {
     setError(null);
     try {
       const res = await apiFetch(
-        `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/tariffs`
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/tariffs`
       );
       if (!res.ok) throw new Error(`Status ${res.status}`);
       const data = await res.json();
@@ -383,7 +383,7 @@ export default function HeatmapPage() {
       console.debug("submitForm: editingTariff=", editingTariff);
       console.debug("submitForm: formState=", formState);
       setIsSaving(true);
-      const base = `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/tariffs`;
+      const base = `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/tariffs`;
       let res;
       if (editingTariff && editingTariff.id) {
         console.debug("submitForm: updating (PUT)", updatePayload);
@@ -464,7 +464,7 @@ export default function HeatmapPage() {
       setLoading(true);
       // request permanent delete (softDelete=false) so the row is removed from DB
       const res = await apiFetch(
-        `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/tariffs/${t.id}?softDelete=false`,
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/tariffs/${t.id}?softDelete=false`,
         { method: "DELETE" }
       );
       if (!res.ok) throw new Error(`Status ${res.status}`);

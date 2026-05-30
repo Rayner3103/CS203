@@ -28,7 +28,7 @@ export function LoginForm({ className = "" }) {
 
     try {
       const response = await fetch(
-        `http://${process.env.NEXT_PUBLIC_BACKEND_EC2_HOST}:8080/api/users/login`,
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/api/users/login`,
         {
           method: "POST",
           headers: {
