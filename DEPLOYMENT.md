@@ -18,7 +18,7 @@ Because the frontend and backend are on **different sites**, auth relies on a cr
 
 1. Create a Neon project and a database. Copy the connection string. You'll need it in two forms:
    - **psql/seed form:** `postgresql://<user>:<pass>@<host>/<db>?sslmode=require`
-   - **JDBC form (for Render):** `jdbc:postgresql://<host>/<db>?sslmode=verify-full` — **host only, no `user:pass@`** (credentials go in separate env vars; see the warning in §2). See [Database connection](#database-connection-ssl-channel-binding-and-pooling) for why `verify-full` and not the copied `require`/`channel_binding`.
+   - **JDBC form (for Render):** `jdbc:postgresql://<host>/<db>?sslmode=require` — **host only, no `user:pass@`** (credentials go in separate env vars; see the warning in §2). See [Database connection](#database-connection-ssl-channel-binding-and-pooling) for `sslmode` options and why to drop the copied `channel_binding`.
 2. **Seed the demo data — once, before the backend ever starts.** The dump creates tables with plain `CREATE TABLE` (no `IF NOT EXISTS`), so it must run against an empty DB before Hibernate auto-creates anything.
 
    Use [`neon-seed.sql`](neon-seed.sql) (a Neon-sanitized copy of `demoData.sql` — the `OWNER TO postgres` and `\restrict` lines that fail on Neon have been stripped):
@@ -48,7 +48,7 @@ Create a **Web Service** → "Build and deploy from a Git repository".
 
 | Key | Value |
 | --- | --- |
-| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://<neon-host>/<db>?sslmode=verify-full` (use Neon's **direct** host, not `-pooler`) |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://<neon-host>/<db>?sslmode=require` (use Neon's **direct** host, not `-pooler`; see SSL note below for `verify-full`) |
 | `SPRING_DATASOURCE_USERNAME` | Neon user |
 | `SPRING_DATASOURCE_PASSWORD` | Neon password |
 | `JWT_SECRET_KEY` | your JWT secret |
@@ -61,7 +61,7 @@ Create a **Web Service** → "Build and deploy from a Git repository".
 > ⚠️ **Do NOT paste Neon's full connection string into `SPRING_DATASOURCE_URL`.** Neon copies a libpq string that embeds credentials (`postgresql://user:pass@host/db`). The PostgreSQL **JDBC driver does not accept `user:pass@` in the URL** — it reads the part after the first `:` as the port and fails with `invalid port number` / `Driver ... claims to not accept jdbcUrl`. The URL must contain **only** host + `/db` + `?sslmode=...`; put the user and password in the separate `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` vars. Example:
 >
 > ```
-> SPRING_DATASOURCE_URL=jdbc:postgresql://ep-xxxx.region.aws.neon.tech/neondb?sslmode=verify-full
+> SPRING_DATASOURCE_URL=jdbc:postgresql://ep-xxxx.region.aws.neon.tech/neondb?sslmode=require
 > SPRING_DATASOURCE_USERNAME=neondb_owner
 > SPRING_DATASOURCE_PASSWORD=npg_xxxxxxxx
 > ```
@@ -72,7 +72,16 @@ Create a **Web Service** → "Build and deploy from a Git repository".
 
 ### Database connection: SSL, channel binding, and pooling
 
-**SSL mode — use `verify-full`.** Plain `sslmode=require` only *encrypts* the connection; it does **not** verify you're actually talking to Neon, leaving a man-in-the-middle gap. `sslmode=verify-full` validates Neon's server certificate and hostname against the JVM's default truststore — no extra config, because Neon's cert chains to a public CA already trusted by Java. (`require` is fine for the one-off `psql` seed.)
+**SSL mode.** Neon requires TLS. Two working options for the backend:
+
+- **`sslmode=require` (default, simplest).** Encrypts the connection without certificate verification. No extra config — this is what Neon's own JDBC examples use. It does *not* verify you're talking to the real Neon server (a theoretical MITM gap), which is acceptable for server-to-server traffic inside cloud infra.
+- **`sslmode=verify-full` + `sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory` (hardened).** Also validates Neon's certificate + hostname. The `sslfactory` part is **required**: without it, the PostgreSQL JDBC driver's default `LibPQFactory` ignores Java's `cacerts` and instead looks for a root-cert *file* at `~/.postgresql/root.crt`, which doesn't exist in the container — you'll get `Could not open SSL root certificate file /root/.postgresql/root.crt`. `DefaultJavaSSLFactory` makes it validate against the JVM truststore (which already trusts Neon's CA), so no cert file is needed:
+
+  ```
+  ...neon.tech/neondb?sslmode=verify-full&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory
+  ```
+
+(`require` is also fine for the one-off `psql` seed — `psql`/libpq use the system CA bundle, so `verify-full` works there without extra flags, unlike JDBC.)
 
 **Channel binding — omit it for the backend.** Neon often appends `channel_binding=require` to copied connection strings. The PostgreSQL **JDBC driver does not support channel binding**, so leave it out of `SPRING_DATASOURCE_URL` (it provides no benefit there and the driver may reject it). `verify-full` already covers the same MITM threat for JDBC. The scrapper's `psycopg2`/`asyncpg` *do* support it, so keeping it there is harmless.
 
@@ -89,7 +98,9 @@ spring.datasource.hikari.keepalive-time=120000
 
 ## 3. Vercel (frontend)
 
-Import the repo and set **Root Directory** to `frontend`. Vercel auto-detects Next.js (it ignores the Dockerfile and `output: "standalone"`).
+Import the repo and set **Root Directory** to `frontend`. Vercel auto-detects Next.js and ignores the Dockerfile.
+
+> ⚠️ **Do not ship `output: "standalone"` to Vercel.** It builds a self-hosting `server.js` (needed only for the Docker image) and makes Vercel **404 on every route** even though the build succeeds. `next.config.mjs` already guards this with `process.env.VERCEL`, so standalone is emitted only for local/Docker builds, not on Vercel. If you ever hardcode `output: "standalone"`, expect site-wide 404s.
 
 **Environment variable:**
 
@@ -118,7 +129,9 @@ Import the repo and set **Root Directory** to `frontend`. Vercel auto-detects Ne
 
 Common failures:
 - **CORS error / login "works" but authed calls 401:** `FRONTEND_ORIGIN` doesn't match the Vercel origin exactly, or `COOKIE_SECURE`/`COOKIE_SAMESITE` aren't `true`/`None`.
-- **DB connection refused/SSL error:** wrong/missing `sslmode` in `SPRING_DATASOURCE_URL`, a stray `channel_binding=require` (unsupported by the JDBC driver), or pointing at the `-pooler` host without `&prepareThreshold=0`.
+- **`Driver ... claims to not accept jdbcUrl` / `invalid port number`:** you put `user:pass@` in `SPRING_DATASOURCE_URL`. Move credentials to the separate username/password env vars (see §2 warning).
+- **`Could not open SSL root certificate file /root/.postgresql/root.crt`:** you used `sslmode=verify-full` (or `verify-ca`) without `&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory`. Add that param, or switch to `sslmode=require`.
+- **DB connection refused/other SSL error:** wrong/missing `sslmode`, a stray `channel_binding=require` (unsupported by the JDBC driver), or pointing at the `-pooler` host without `&prepareThreshold=0`.
 
 ---
 
